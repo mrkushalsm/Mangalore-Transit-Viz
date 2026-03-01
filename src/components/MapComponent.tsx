@@ -18,6 +18,7 @@ interface MapComponentProps {
 export default function MapComponent({ graphData, mapboxToken }: MapComponentProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
+  const animationFrameId = useRef<number | null>(null);
   const { state, isLoaded, updateCenterZoom, setSelectedStopId } = useTransitState();
   const [spiderWeb, setSpiderWeb] = useState<SpiderWeb | null>(null);
 
@@ -66,7 +67,7 @@ export default function MapComponent({ graphData, mapboxToken }: MapComponentPro
       map.current.addLayer({
         id: "level2-lines",
         type: "line",
-        source: "level2-routes",
+         source: "level2-routes",
         layout: {
           "line-join": "round",
           "line-cap": "round",
@@ -74,7 +75,7 @@ export default function MapComponent({ graphData, mapboxToken }: MapComponentPro
         paint: {
           "line-color": "#ff00ff", // Magenta
           "line-width": 3,
-          "line-dasharray": [2, 4],
+          "line-dasharray": [0, 4, 3],
           "line-opacity": 0.6,
         },
       });
@@ -90,6 +91,7 @@ export default function MapComponent({ graphData, mapboxToken }: MapComponentPro
         paint: {
           "line-color": "#00ffff", // Neon Cyan
           "line-width": 4,
+          "line-dasharray": [0, 4, 3],
           "line-opacity": 0.9,
         },
       });
@@ -184,15 +186,43 @@ export default function MapComponent({ graphData, mapboxToken }: MapComponentPro
 
         // Add Animation here using requestAnimationFrame to shift the dasharray if desired, 
         // to implement the "flow outward" effect later.
+        
+        const animateDashArray = () => {
+          if (!map.current) return;
+          const step = (Date.now() / 50) % 7;
+          
+          if (map.current.getLayer("level1-lines")) {
+            map.current.setPaintProperty("level1-lines", "line-dasharray", [step, 4, 3]);
+          }
+          if (map.current.getLayer("level2-lines")) {
+            map.current.setPaintProperty("level2-lines", "line-dasharray", [step, 4, 3]);
+          }
+          
+          animationFrameId.current = requestAnimationFrame(animateDashArray);
+        };
+        
+        if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
+        animateDashArray();
+
       }
     } else {
        // Clear lines if no selection
        (map.current.getSource("level1-routes") as mapboxgl.GeoJSONSource)?.setData({ type: "FeatureCollection", features: [] });
        (map.current.getSource("level2-routes") as mapboxgl.GeoJSONSource)?.setData({ type: "FeatureCollection", features: [] });
        setSpiderWeb(null);
+       if (animationFrameId.current) {
+         cancelAnimationFrame(animationFrameId.current);
+         animationFrameId.current = null;
+       }
     }
 
   }, [graphData, state.selectedStopId, map.current]);
+
+  useEffect(() => {
+    return () => {
+       if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
+    };
+  }, []);
 
   return (
     <div className="relative w-full h-full">
