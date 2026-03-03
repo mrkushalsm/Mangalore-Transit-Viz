@@ -1,182 +1,124 @@
-import Papa from "papaparse";
-import * as turf from "@turf/turf";
+import { point, distance } from '@turf/turf';
 
-export const BUS_DATA_URL =
-  "https://raw.githubusercontent.com/mrkushalsm/Mangalore-Bus-Routes/master/public/data/bus-data.csv";
+export type TransitGeoJSON = GeoJSON.FeatureCollection<
+  GeoJSON.Point | GeoJSON.LineString,
+  { id?: string; name?: string;[key: string]: any }
+>;
 
-export interface BusStopRaw {
-  id: string;
-  busNumber: string;
-  description: string;
-  stops: string; // semicolon separated
+export interface BusStopFeature extends GeoJSON.Feature<GeoJSON.Point> {
+  properties: { id: string; name: string; routes?: string[];[key: string]: any };
 }
 
-export interface BusStop {
-  id: string; // normalized stop name
-  name: string;
-  lat: number;
-  lng: number;
-  routes: string[]; // Routes passing through this stop
+export interface RouteFeature extends GeoJSON.Feature<GeoJSON.LineString> {
+  properties: { id: string; name: string; stops?: string[];[key: string]: any };
 }
 
-export interface RouteInfo {
-  id: string; // busNumber
-  name: string; // description
-  stops: string[]; // Ordered list of stop IDs
+export interface SpiderWebGeo {
+  origin: BusStopFeature;
+  level1Routes: RouteFeature[];
+  level2Routes: RouteFeature[];
 }
 
-export interface GraphData {
-  stops: Record<string, BusStop>;
-  routes: Record<string, RouteInfo>;
-}
-
-// A dictionary to store inferred/mock coordinates for stops to make the Mapbox component work.
-// Ideally, we'd have a secondary dataset with true coordinates.
-// We will assign them within a bounding box of Mangalore: [12.8, 74.8] to [13.0, 74.9]
-const stopCoordinates: Record<string, { lat: number; lng: number }> = {};
-
-function getOrCreateCoordinates(stopId: string): { lat: number; lng: number } {
-  if (stopCoordinates[stopId]) return stopCoordinates[stopId];
-  
-  // Deterministic "random" based on string hashing for consistency across reloads
-  let hash = 0;
-  for (let i = 0; i < stopId.length; i++) {
-    hash = stopId.charCodeAt(i) + ((hash << 5) - hash);
+export async function fetchAndParseData(): Promise<TransitGeoJSON> {
+  const res = await fetch('/data/bus-network-geo.json');
+  if (!res.ok) {
+    throw new Error('Failed to fetch bus network data');
   }
-  
-  // Mangalore BBox approx: lat 12.8 to 13.0, lng 74.8 to 74.9
-  const lat = 12.8 + (Math.abs(hash) % 200) / 1000;
-  const lng = 74.8 + (Math.abs(hash >> 8) % 100) / 1000;
-  
-  stopCoordinates[stopId] = { lat, lng };
-  return { lat, lng };
-}
+  const rawData = await res.json();
 
+  if (rawData.type === 'FeatureCollection') {
+    // Standardize IDs and Names to ensure our layer components don't crash
+    rawData.features.forEach((f: any) => {
+      if (!f.properties) f.properties = {};
+      f.properties.id = (f.properties.id || f.properties.name || Math.random().toString()).toString();
+      f.properties.name = (f.properties.name || f.properties.id).toString();
 
-export async function fetchAndParseData(): Promise<GraphData> {
-  const res = await fetch(BUS_DATA_URL);
-  if (!res.ok) throw new Error("Failed to fetch bus data");
-  const csvText = await res.text();
-
-  return new Promise((resolve, reject) => {
-    Papa.parse(csvText, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        const rawData = results.data as BusStopRaw[];
-        resolve(buildGraph(rawData));
-      },
-      error: (error: Error) => reject(error),
-    });
-  });
-}
-
-function buildGraph(data: BusStopRaw[]): GraphData {
-  const stops: Record<string, BusStop> = {};
-  const routes: Record<string, RouteInfo> = {};
-
-  data.forEach((row) => {
-    const routeId = row.busNumber;
-    const routeName = row.description;
-    const stopsStr = row.stops;
-
-    if (!routeId || !stopsStr) return; // Skip invalid rows
-
-    const stopNames = stopsStr.split(';').map(s => s.trim()).filter(Boolean);
-
-    // Add Route
-    if (!routes[routeId]) {
-      routes[routeId] = {
-        id: routeId,
-        name: routeName,
-        stops: [],
-      };
-    }
-
-    stopNames.forEach((stopName) => {
-      const stopId = stopName.toLowerCase().replace(/[^a-z0-9]/g, "-");
-      
-      // Add Stop
-      if (!stops[stopId]) {
-        const coords = getOrCreateCoordinates(stopId);
-        stops[stopId] = {
-          id: stopId,
-          name: stopName,
-          lat: coords.lat,
-          lng: coords.lng,
-          routes: [],
-        };
-      }
-      if (!stops[stopId].routes.includes(routeId)) {
-        stops[stopId].routes.push(routeId);
-      }
-      
-      const currentRouteStops = routes[routeId].stops;
-      if (currentRouteStops[currentRouteStops.length - 1] !== stopId) {
-        currentRouteStops.push(stopId);
+      // Keep coordinates as strict numbers
+      if (f.geometry?.type === 'Point') {
+        const [lng, lat] = f.geometry.coordinates;
+        f.geometry.coordinates = [Number(lng), Number(lat)];
+        f.properties.routes = f.properties.routes || [];
+      } else if (f.geometry?.type === 'LineString') {
+        f.geometry.coordinates = f.geometry.coordinates.map((c: any) => [Number(c[0]), Number(c[1])]);
+        f.properties.stops = f.properties.stops || [];
       }
     });
 
-  });
+    console.log(`Loaded GeoJSON with ${rawData.features.length} features`);
+    return rawData as TransitGeoJSON;
+  }
 
-  return { stops, routes };
+  // If we ever hit here, someone modified the backend to output something fundamentally un-GeoJSON.
+  // We'll return an empty collection gracefully.
+  console.error("Data fetched is not a valid FeatureCollection");
+  return { type: "FeatureCollection", features: [] };
 }
 
-export function findNearestStop(
-  lng: number,
-  lat: number,
-  stops: Record<string, BusStop>
-): BusStop | null {
-  const clickPoint = turf.point([lng, lat]);
-  let nearest: BusStop | null = null;
+export function findNearestStop(lng: number, lat: number, geojson: TransitGeoJSON): BusStopFeature | null {
+  const stops = geojson.features.filter(f => f.geometry.type === 'Point') as BusStopFeature[];
+  if (stops.length === 0) return null;
+
+  const clickPoint = point([lng, lat]);
+  let nearest: BusStopFeature | null = null;
   let minDistance = Infinity;
 
-  Object.values(stops).forEach((stop) => {
-    const stopPoint = turf.point([stop.lng, stop.lat]);
-    const distance = turf.distance(clickPoint, stopPoint, { units: "kilometers" });
-    if (distance < minDistance) {
-      minDistance = distance;
+  for (const stop of stops) {
+    const stopPoint = point(stop.geometry.coordinates as [number, number]);
+    const dist = distance(clickPoint, stopPoint, { units: 'kilometers' });
+
+    if (dist < minDistance) {
+      minDistance = dist;
       nearest = stop;
     }
-  });
+  }
 
   return nearest;
 }
 
-export interface SpiderWeb {
-  origin: BusStop;
-  level1Routes: RouteInfo[];
-  level2Routes: RouteInfo[];
-}
-
-export function computeSpiderWeb(originId: string, graph: GraphData): SpiderWeb | null {
-  const origin = graph.stops[originId];
+export function computeSpiderWeb(originId: string, geojson: TransitGeoJSON): SpiderWebGeo | null {
+  const origin = geojson.features.find(f => f.geometry.type === 'Point' && f.properties?.id === originId) as BusStopFeature;
   if (!origin) return null;
 
-  const level1Routes: RouteInfo[] = [];
-  const level2RoutesMap = new Map<string, RouteInfo>();
+  const level1Routes: RouteFeature[] = [];
+  const level2RoutesMap = new Map<string, RouteFeature>();
   const directlyConnectedStops = new Set<string>();
 
+  const allRoutes = geojson.features.filter(f => f.geometry.type === 'LineString') as RouteFeature[];
+  const allStops = geojson.features.filter(f => f.geometry.type === 'Point') as BusStopFeature[];
+
+  // A helper map to easily lookup stops by ID
+  const stopMap = new Map(allStops.map(s => [s.properties.id, s]));
+
+  // In standard GeoJSON, routes are LineStrings. We have to map properties manually or assume they have a `stops` array.
+  const originRoutesList = origin.properties.routes || [];
+
   // Level 1: Find all routes directly passing through origin
-  origin.routes.forEach(routeId => {
-    const route = graph.routes[routeId];
-    if (route) {
+  allRoutes.forEach(route => {
+    // Fallback: If route has an array of stop IDs that includes originId, or origin has an array of route IDs that includes route id.
+    const routeStopsList = route.properties.stops || [];
+
+    if (routeStopsList.includes(originId) || originRoutesList.includes(route.properties.id)) {
       level1Routes.push(route);
-      route.stops.forEach(stopId => directlyConnectedStops.add(stopId));
+      routeStopsList.forEach((stopId: string) => directlyConnectedStops.add(stopId));
     }
   });
 
   // Level 2: Find all routes intersecting with Level 1 routes
   directlyConnectedStops.forEach(stopId => {
-    const stop = graph.stops[stopId];
+    const stop = stopMap.get(stopId);
     if (stop) {
-      stop.routes.forEach(routeId => {
+      const stopRoutesList = stop.properties.routes || [];
+
+      allRoutes.forEach(route => {
+        const routeStopsList = route.properties.stops || [];
+
         // Exclude routes already in Level 1
-        if (!origin.routes.includes(routeId)) {
-           const route = graph.routes[routeId];
-           if (route) {
-             level2RoutesMap.set(routeId, route);
-           }
+        const isAlreadyLevel1 = level1Routes.some(l1 => l1.properties.id === route.properties.id);
+
+        if (!isAlreadyLevel1) {
+          if (routeStopsList.includes(stopId) || stopRoutesList.includes(route.properties.id)) {
+            level2RoutesMap.set(route.properties.id, route);
+          }
         }
       });
     }
@@ -185,6 +127,6 @@ export function computeSpiderWeb(originId: string, graph: GraphData): SpiderWeb 
   return {
     origin,
     level1Routes,
-    level2Routes: Array.from(level2RoutesMap.values()),
+    level2Routes: Array.from(level2RoutesMap.values()).slice(0, 15),
   };
 }

@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { BusStop, SpiderWeb } from "@/lib/graph";
 
 interface TransitState {
     center: [number, number]; // [lng, lat]
@@ -13,7 +12,7 @@ const DEFAULT_STATE: TransitState = {
     selectedStopId: null,
 };
 
-const STORAGE_KEY = "kudlareach-transit-state";
+const STORAGE_KEY = "mangalore-transit-viz-state";
 
 export function useTransitState() {
     const [state, setState] = useState<TransitState>(DEFAULT_STATE);

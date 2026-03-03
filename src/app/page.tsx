@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { GraphData, fetchAndParseData, computeSpiderWeb } from "@/lib/graph";
+import { TransitGeoJSON, fetchAndParseData, computeSpiderWeb } from "@/lib/graph";
 import { HUD } from "@/components/HUD";
 import { useTransitState } from "@/hooks/useTransitState";
 
@@ -10,11 +10,11 @@ import { useTransitState } from "@/hooks/useTransitState";
 const MapComponent = dynamic(() => import("@/components/MapComponent"), { ssr: false });
 
 export default function Home() {
-  const [graphData, setGraphData] = useState<GraphData | null>(null);
+  const [graphData, setGraphData] = useState<TransitGeoJSON | null>(null);
   const [loading, setLoading] = useState(true);
   const [isWalkingEnabled, setIsWalkingEnabled] = useState(false);
   
-  const { state } = useTransitState();
+  const { state, setSelectedStopId } = useTransitState();
 
   useEffect(() => {
     async function initData() {
@@ -42,7 +42,8 @@ export default function Home() {
         <HUD 
           spiderWeb={spiderWeb} 
           isWalkingEnabled={isWalkingEnabled}
-          onWalkingToggle={setIsWalkingEnabled}
+          onWalkingToggle={() => setIsWalkingEnabled(!isWalkingEnabled)}
+          onClearSelection={() => setSelectedStopId(null)}
         />
       </div>
 

@@ -1,49 +1,51 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { SpiderWeb } from "@/lib/graph";
-import { Activity, Footprints, Route } from "lucide-react";
+import { SpiderWebGeo } from "@/lib/graph";
+import { Activity, Route, MapPin, Footprints, X } from "lucide-react";
 
 interface HUDProps {
-  spiderWeb: SpiderWeb | null;
+  spiderWeb: SpiderWebGeo | null;
   isWalkingEnabled: boolean;
-  onWalkingToggle: (enabled: boolean) => void;
+  onWalkingToggle: () => void;
+  onClearSelection?: () => void;
 }
 
-export function HUD({ spiderWeb, isWalkingEnabled, onWalkingToggle }: HUDProps) {
-  if (!spiderWeb) {
-    return (
-      <Card className="w-80 backdrop-blur-md bg-zinc-950/80 border-zinc-800 shadow-xl overflow-hidden shadow-cyan-900/10">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-xl text-zinc-100 flex items-center gap-2">
-            <Activity className="text-cyan-400 w-5 h-5" />
-            Transit Engine
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-zinc-400">Click any stop to begin routing.</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Simple Mock Stats
-  const l1Count = spiderWeb.level1Routes.length;
-  const l2Count = spiderWeb.level2Routes.length;
-  const efficiency = Math.min(100, Math.round((l1Count + l2Count) / 2 * 10));
+export function HUD({ spiderWeb, isWalkingEnabled, onWalkingToggle, onClearSelection }: HUDProps) {
+  const originName = spiderWeb?.origin.properties.name || "Select a stop";
+  const l1Count = spiderWeb?.level1Routes.length || 0;
+  const l2Count = spiderWeb?.level2Routes.length || 0;
+  const totalPaths = l1Count + l2Count;
+  
+  // Fictional efficiency metric to look cool (Direct vs Transfer ratio)
+  const efficiency = totalPaths > 0 
+    ? Math.round((l1Count / totalPaths) * 100) 
+    : 0;
 
   return (
     <Card className="w-80 backdrop-blur-md bg-zinc-950/80 border-zinc-800 shadow-xl overflow-hidden shadow-cyan-900/20 transition-all duration-300">
-      <CardHeader className="pb-2 border-b border-zinc-800/50">
-        <div className="flex justify-between items-start">
-          <CardTitle className="text-xl text-zinc-100 flex items-center gap-2">
-             <Route className="text-cyan-400 w-5 h-5" />
-             {spiderWeb.origin.name}
-          </CardTitle>
-          <Badge variant="outline" className="border-cyan-500/30 text-cyan-300 bg-cyan-500/10">
-            {efficiency}% Efficiency
-          </Badge>
-        </div>
+      <CardHeader className="pb-4 relative">
+         <div className="absolute top-0 left-0 w-1 h-full bg-cyan-500 rounded-l-md" />
+         <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-transparent pointer-events-none" />
+         <div className="flex items-center justify-between">
+           <CardTitle className="text-xl font-bold flex items-center gap-2 text-zinc-100">
+             <Activity className="text-cyan-400" />
+             Transit Engine
+           </CardTitle>
+           {spiderWeb && onClearSelection && (
+             <button 
+               onClick={onClearSelection}
+               className="text-zinc-500 hover:text-red-400 transition-colors bg-zinc-900/50 hover:bg-zinc-800 p-1.5 rounded-full"
+               title="Clear selection"
+             >
+               <X className="w-4 h-4" />
+             </button>
+           )}
+         </div>
+         <CardDescription className="text-zinc-400 pt-2 text-sm flex items-start gap-1.5">
+            <Route className="w-4 h-4 mt-0.5 shrink-0" />
+            <span className="truncate">{originName}</span>
+         </CardDescription>
       </CardHeader>
       <CardContent className="pt-4 space-y-4">
         

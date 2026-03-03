@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
-import { GraphData, BusStop, SpiderWeb, findNearestStop, computeSpiderWeb } from "@/lib/graph";
+import { TransitGeoJSON, BusStopFeature, RouteFeature, findNearestStop, computeSpiderWeb } from "@/lib/graph";
 import { useTransitState } from "@/hooks/useTransitState";
 
 // NOTE: We need a public Mapbox token. The user didn't specify one, so we are omitting it 
@@ -11,21 +10,25 @@ import { useTransitState } from "@/hooks/useTransitState";
 // mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "pk.dummy";
 
 interface MapComponentProps {
-  graphData: GraphData | null;
+  graphData: TransitGeoJSON | null;
   mapboxToken: string;
 }
 
 export default function MapComponent({ graphData, mapboxToken }: MapComponentProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
-  const animationFrameId = useRef<number | null>(null);
   const { state, isLoaded, updateCenterZoom, setSelectedStopId } = useTransitState();
-  const [spiderWeb, setSpiderWeb] = useState<SpiderWeb | null>(null);
+  const [mapLoaded, setMapLoaded] = useState(false);
 
   useEffect(() => {
     if (!mapboxToken) return;
     mapboxgl.accessToken = mapboxToken;
   }, [mapboxToken]);
+
+  const graphDataRef = useRef(graphData);
+  useEffect(() => {
+    graphDataRef.current = graphData;
+  }, [graphData]);
 
   // Initialize Map (Singleton pattern per component lifecycle)
   useEffect(() => {
@@ -73,9 +76,9 @@ export default function MapComponent({ graphData, mapboxToken }: MapComponentPro
           "line-cap": "round",
         },
         paint: {
-          "line-color": "#ff00ff", // Magenta
+          "line-color": "#bfdbfe", // Light blue transfer lines
           "line-width": 3,
-          "line-dasharray": [0, 4, 3],
+          "line-dasharray": [2, 4],
           "line-opacity": 0.6,
         },
       });
@@ -89,9 +92,8 @@ export default function MapComponent({ graphData, mapboxToken }: MapComponentPro
           "line-cap": "round",
         },
         paint: {
-          "line-color": "#00ffff", // Neon Cyan
-          "line-width": 4,
-          "line-dasharray": [0, 4, 3],
+          "line-color": "#06b6d4", // Cyan direct lines
+          "line-width": 5,
           "line-opacity": 0.9,
         },
       });
@@ -108,19 +110,48 @@ export default function MapComponent({ graphData, mapboxToken }: MapComponentPro
         },
       });
 
+      // Add all stops base layer
+      map.current.addSource("all-stops", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] }
+      });
+
+      map.current.addLayer({
+        id: "all-stops-points",
+        type: "circle",
+        source: "all-stops",
+        paint: {
+          "circle-radius": 4,
+          "circle-color": "#e4e4e7", // zinc-200
+          "circle-stroke-width": 1,
+          "circle-stroke-color": "#18181b", // zinc-900 border
+        },
+      });
+
       // Click event for origin stop
       map.current.on("click", (e) => {
-        if (!graphData) return;
-        const nearest = findNearestStop(e.lngLat.lng, e.lngLat.lat, graphData.stops);
+        if (!graphDataRef.current) {
+           console.log("Click ignored: graphDataRef is null or empty");
+           return;
+        }
+        console.log("Clicked at:", e.lngLat.lng, e.lngLat.lat);
+        const nearest = findNearestStop(e.lngLat.lng, e.lngLat.lat, graphDataRef.current);
+        console.log("Nearest stop found:", nearest?.properties?.name, "Distance check passed?", !!nearest);
+        
         if (nearest) {
-          setSelectedStopId(nearest.id);
+          setSelectedStopId(nearest.properties.id);
         }
       });
       
-      // Initial render if state had a selected stop
-      if (state.selectedStopId && graphData) {
-         // trigger update (effect below will catch it)
-      }
+      // Change cursor on hover over stops
+      map.current.on('mouseenter', 'all-stops-points', () => {
+         if (map.current) map.current.getCanvas().style.cursor = 'pointer';
+      });
+      map.current.on('mouseleave', 'all-stops-points', () => {
+         if (map.current) map.current.getCanvas().style.cursor = '';
+      });
+      
+      setMapLoaded(true);
     });
 
     return () => {
@@ -131,107 +162,65 @@ export default function MapComponent({ graphData, mapboxToken }: MapComponentPro
 
   // Update Map Data when Graph or Selected Stop changes
   useEffect(() => {
-    if (!map.current || !graphData || !map.current.isStyleLoaded()) return;
+    if (!map.current || !graphData || !mapLoaded || !map.current.isStyleLoaded()) return;
 
-    // Plot all stops
-    const stopFeatures = Object.values(graphData.stops).map((stop) => ({
-      type: "Feature" as const,
-      geometry: { type: "Point" as const, coordinates: [stop.lng, stop.lat] },
-      properties: { id: stop.id, name: stop.name },
-    }));
+    // We can just filter out only the Points to send to the stops layers
+    const pointFeatures = graphData.features.filter(f => f.geometry.type === 'Point');
 
-    (map.current.getSource("stops") as mapboxgl.GeoJSONSource)?.setData({
-       type: "FeatureCollection",
-       features: stopFeatures,
-    });
+    const allStopsSource = map.current.getSource("all-stops") as mapboxgl.GeoJSONSource;
+    console.log("allStopsSource found:", !!allStopsSource, "points:", pointFeatures.length);
+    if (allStopsSource) {
+      allStopsSource.setData({
+        type: "FeatureCollection",
+        features: pointFeatures as any,
+      });
+    }
 
-    if (state.selectedStopId) {
+    const stopsSource = map.current.getSource("stops") as mapboxgl.GeoJSONSource;
+    if (stopsSource) {
+      stopsSource.setData({
+         type: "FeatureCollection",
+         features: pointFeatures as any,
+      });
+    }
+
+    if (state.selectedStopId && map.current.getSource("level1-routes")) {
       const web = computeSpiderWeb(state.selectedStopId, graphData);
-      setSpiderWeb(web);
       
       if (web) {
-        // Construct LineStrings for Level 1 routes
-        const l1Features = web.level1Routes.map((route) => {
-          const coords = route.stops.map(sid => {
-            const s = graphData.stops[sid];
-            return [s.lng, s.lat];
+        if (web.level1Routes.length > 0) {
+          (map.current.getSource('level1-routes') as mapboxgl.GeoJSONSource).setData({
+            type: 'FeatureCollection',
+            features: web.level1Routes as any
           });
-          return {
-            type: "Feature" as const,
-            geometry: { type: "LineString" as const, coordinates: coords },
-            properties: { id: route.id, name: route.name }
-          }
-        });
-        (map.current.getSource("level1-routes") as mapboxgl.GeoJSONSource)?.setData({
-          type: "FeatureCollection",
-          features: l1Features,
-        });
+        }
 
-        // Construct LineStrings for Level 2 routes
-        const l2Features = web.level2Routes.map((route) => {
-          const coords = route.stops.map(sid => {
-            const s = graphData.stops[sid];
-            return [s.lng, s.lat];
+        if (web.level2Routes.length > 0) {
+          (map.current.getSource('level2-routes') as mapboxgl.GeoJSONSource).setData({
+            type: 'FeatureCollection',
+            features: web.level2Routes as any
           });
-          return {
-            type: "Feature" as const,
-            geometry: { type: "LineString" as const, coordinates: coords },
-            properties: { id: route.id, name: route.name }
-          }
-        });
-        (map.current.getSource("level2-routes") as mapboxgl.GeoJSONSource)?.setData({
-          type: "FeatureCollection",
-          features: l2Features,
-        });
-
-        // Add Animation here using requestAnimationFrame to shift the dasharray if desired, 
-        // to implement the "flow outward" effect later.
-        
-        const animateDashArray = () => {
-          if (!map.current) return;
-          const step = (Date.now() / 50) % 7;
-          
-          if (map.current.getLayer("level1-lines")) {
-            map.current.setPaintProperty("level1-lines", "line-dasharray", [step, 4, 3]);
-          }
-          if (map.current.getLayer("level2-lines")) {
-            map.current.setPaintProperty("level2-lines", "line-dasharray", [step, 4, 3]);
-          }
-          
-          animationFrameId.current = requestAnimationFrame(animateDashArray);
-        };
-        
-        if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
-        animateDashArray();
-
+        }
       }
-    } else {
+    } else if (map.current.getSource("level1-routes")) {
        // Clear lines if no selection
        (map.current.getSource("level1-routes") as mapboxgl.GeoJSONSource)?.setData({ type: "FeatureCollection", features: [] });
        (map.current.getSource("level2-routes") as mapboxgl.GeoJSONSource)?.setData({ type: "FeatureCollection", features: [] });
-       setSpiderWeb(null);
-       if (animationFrameId.current) {
-         cancelAnimationFrame(animationFrameId.current);
-         animationFrameId.current = null;
-       }
     }
 
-  }, [graphData, state.selectedStopId, map.current]);
+  }, [graphData, state.selectedStopId, mapLoaded]);
 
-  useEffect(() => {
-    return () => {
-       if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
-    };
-  }, []);
+  if (!mapboxToken) {
+    return (
+      <div className="flex items-center justify-center w-full h-full bg-zinc-900 text-red-400 p-4 text-center">
+        Error: NEXT_PUBLIC_MAPBOX_TOKEN is missing or undefined on the client.
+      </div>
+    );
+  }
 
   return (
-    <div className="relative w-full h-full">
-      <div ref={mapContainer} className="absolute inset-0" />
-      {spiderWeb && (
-         <div className="absolute top-4 left-4 z-10 pointer-events-none">
-           {/* HUD component will go here or be passed spiderWeb state in parent */}
-         </div>
-      )}
+    <div className="absolute inset-0 z-0 w-full h-full">
+      <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
     </div>
   );
 }
