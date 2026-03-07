@@ -19,6 +19,19 @@ export interface SpiderWebGeo {
   level2Routes: RouteFeature[];
 }
 
+export interface RouteLeg {
+  routeId: string;
+  routeName: string;
+  fromStopId: string;
+  toStopId: string;
+}
+
+export interface TripItinerary {
+  origin: BusStopFeature;
+  destination: BusStopFeature;
+  legs: RouteLeg[];
+}
+
 export async function fetchAndParseData(): Promise<TransitGeoJSON> {
   const res = await fetch('/data/bus-network-geo.json');
   if (!res.ok) {
@@ -130,3 +143,143 @@ export function computeSpiderWeb(originId: string, geojson: TransitGeoJSON): Spi
     level2Routes: Array.from(level2RoutesMap.values()).slice(0, 15),
   };
 }
+
+export function computeAllPaths(originId: string, destId: string, geojson: TransitGeoJSON, maxTransfers: number = 2): TripItinerary[] {
+  const allStops = geojson.features.filter(f => f.geometry.type === 'Point') as BusStopFeature[];
+  const allRoutes = geojson.features.filter(f => f.geometry.type === 'LineString') as RouteFeature[];
+
+  const stopMap = new Map(allStops.map(s => [s.properties.id, s]));
+  const routeMap = new Map(allRoutes.map(r => [r.properties.id, r]));
+
+  const origin = stopMap.get(originId);
+  const dest = stopMap.get(destId);
+  if (!origin || !dest || originId === destId) return [];
+
+  // Build a fast lookup of StopName -> RouteFeatures
+  const stopToRoutes = new Map<string, RouteFeature[]>();
+  allRoutes.forEach(r => {
+    const stops = r.properties.stops || [];
+    stops.forEach(sId => {
+      const normalizedId = String(sId).toLowerCase().trim();
+      if (!stopToRoutes.has(normalizedId)) stopToRoutes.set(normalizedId, []);
+      stopToRoutes.get(normalizedId)!.push(r);
+    });
+  });
+
+  const normalizedOriginId = String(originId).toLowerCase().trim();
+  const normalizedDestId = String(destId).toLowerCase().trim();
+
+  type PathState = {
+    currentStopId: string;
+    originalCurrentStopId: string;
+    history: RouteLeg[];
+    visitedBuses: Set<string>;
+  };
+
+  const queue: PathState[] = [
+    { currentStopId: normalizedOriginId, originalCurrentStopId: originId, history: [], visitedBuses: new Set() }
+  ];
+
+  const validItineraries: TripItinerary[] = [];
+  const visitedStops = new Map<string, number>();
+  visitedStops.set(normalizedOriginId, 0);
+
+  const MAX_SOLUTIONS = 50;
+  let iterations = 0;
+  const MAX_ITERATIONS = 5000;
+
+  while (queue.length > 0) {
+    iterations++;
+    if (iterations > MAX_ITERATIONS) break;
+    if (validItineraries.length >= MAX_SOLUTIONS) break;
+
+    const state = queue.shift()!;
+    const { currentStopId, originalCurrentStopId, history, visitedBuses } = state;
+
+    if (history.length > maxTransfers + 1) continue;
+
+    const availableRoutes = stopToRoutes.get(currentStopId) || [];
+
+    for (const route of availableRoutes) {
+      if (visitedBuses.has(route.properties.id)) continue;
+
+      const stops = route.properties.stops?.map(s => String(s).toLowerCase().trim()) || [];
+      const originalStops = route.properties.stops || [];
+
+      // If destination is on this bus
+      if (stops.includes(normalizedDestId)) {
+        const destIdx = stops.indexOf(normalizedDestId);
+        const currentIdx = stops.indexOf(currentStopId);
+        const originalEndStopId = String(originalStops[destIdx]);
+
+        const busNumber = route.properties.busNumber || route.properties.name?.split(':')[0]?.replace('Route ', '') || route.properties.id;
+        const routeName = `${busNumber}: ${originalCurrentStopId} to ${originalEndStopId}`;
+
+        const newLeg: RouteLeg = {
+          routeId: route.properties.id,
+          routeName: routeName,
+          fromStopId: originalCurrentStopId,
+          toStopId: originalEndStopId
+        };
+
+        validItineraries.push({
+          origin,
+          destination: dest,
+          legs: [...history, newLeg]
+        });
+        continue;
+      }
+
+      if (history.length >= maxTransfers + 1) continue; // Can't transfer again
+
+      // Reachability: Explore all other stops on this bus
+      const currentIdx = stops.indexOf(currentStopId);
+      for (let i = 0; i < stops.length; i++) {
+        const nextStopId = stops[i];
+        if (nextStopId === currentStopId) continue;
+
+        const nextDepth = history.length + 1;
+        if (visitedStops.has(nextStopId) && visitedStops.get(nextStopId)! < nextDepth) {
+          continue; // We've reached this stop more efficiently before
+        }
+
+        visitedStops.set(nextStopId, nextDepth);
+        const originalNextStopId = String(originalStops[i]);
+
+        const busNumber = route.properties.busNumber || route.properties.name?.split(':')[0]?.replace('Route ', '') || route.properties.id;
+        const routeName = `${busNumber}: ${originalCurrentStopId} to ${originalNextStopId}`;
+
+        const newLeg: RouteLeg = {
+          routeId: route.properties.id,
+          routeName: routeName,
+          fromStopId: originalCurrentStopId,
+          toStopId: originalNextStopId
+        };
+
+        queue.push({
+          currentStopId: nextStopId,
+          originalCurrentStopId: originalNextStopId,
+          history: [...history, newLeg],
+          visitedBuses: new Set([...visitedBuses, route.properties.id])
+        });
+      }
+    }
+  }
+
+  // Deduplicate and Sort
+  validItineraries.sort((a, b) => a.legs.length - b.legs.length);
+
+  const uniqueItineraries: TripItinerary[] = [];
+  const seenSignatures = new Set<string>();
+
+  for (const it of validItineraries) {
+    const signature = it.legs.map(l => `${l.routeName}:${l.fromStopId}-${l.toStopId}`).join('|');
+    if (!seenSignatures.has(signature)) {
+      seenSignatures.add(signature);
+      uniqueItineraries.push(it);
+    }
+  }
+
+  return uniqueItineraries;
+}
+

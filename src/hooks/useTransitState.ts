@@ -3,16 +3,18 @@ import { useState, useEffect } from "react";
 interface TransitState {
     center: [number, number]; // [lng, lat]
     zoom: number;
-    selectedStopId: string | null;
+    originStopId: string | null;
+    destinationStopId: string | null;
 }
 
 const DEFAULT_STATE: TransitState = {
     center: [74.85, 12.87], // Mangalore center
     zoom: 12,
-    selectedStopId: null,
+    originStopId: null,
+    destinationStopId: null,
 };
 
-const STORAGE_KEY = "mangalore-transit-viz-state";
+const STORAGE_KEY = "mangalore-transit-viz-state-v2";
 
 export function useTransitState() {
     const [state, setState] = useState<TransitState>(DEFAULT_STATE);
@@ -43,14 +45,24 @@ export function useTransitState() {
         setState((s) => ({ ...s, center, zoom }));
     };
 
-    const setSelectedStopId = (id: string | null) => {
-        setState((s) => ({ ...s, selectedStopId: id }));
+    const setOriginStopId = (id: string | null) => {
+        setState((s) => ({ ...s, originStopId: id }));
+    };
+
+    const setDestinationStopId = (id: string | null) => {
+        setState((s) => ({ ...s, destinationStopId: id }));
+    };
+
+    const clearSelection = () => {
+        setState((s) => ({ ...s, originStopId: null, destinationStopId: null }));
     };
 
     return {
         state,
         isLoaded,
         updateCenterZoom,
-        setSelectedStopId,
+        setOriginStopId,
+        setDestinationStopId,
+        clearSelection,
     };
 }

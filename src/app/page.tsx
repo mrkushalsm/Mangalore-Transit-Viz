@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { TransitGeoJSON, fetchAndParseData, computeSpiderWeb } from "@/lib/graph";
+import { TransitGeoJSON, fetchAndParseData, computeAllPaths, TripItinerary } from "@/lib/graph";
 import { HUD } from "@/components/HUD";
 import { useTransitState } from "@/hooks/useTransitState";
 
@@ -12,9 +12,9 @@ const MapComponent = dynamic(() => import("@/components/MapComponent"), { ssr: f
 export default function Home() {
   const [graphData, setGraphData] = useState<TransitGeoJSON | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isWalkingEnabled, setIsWalkingEnabled] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   
-  const { state, setSelectedStopId } = useTransitState();
+  const { state, setOriginStopId, setDestinationStopId, clearSelection } = useTransitState();
 
   useEffect(() => {
     async function initData() {
@@ -30,9 +30,14 @@ export default function Home() {
     initData();
   }, []);
 
-  const spiderWeb = (graphData && state.selectedStopId) 
-    ? computeSpiderWeb(state.selectedStopId, graphData) 
-    : null;
+  const itineraries: TripItinerary[] = (graphData && state.originStopId && state.destinationStopId) 
+    ? computeAllPaths(state.originStopId, state.destinationStopId, graphData) 
+    : [];
+
+  const handleClearSelection = () => {
+     setSelectedIndex(0);
+     clearSelection();
+  };
 
   return (
     <main className="relative w-full h-screen overflow-hidden bg-zinc-950">
@@ -40,10 +45,20 @@ export default function Home() {
       {/* HUD Layer */}
       <div className="absolute top-4 left-4 z-20 pointer-events-auto">
         <HUD 
-          spiderWeb={spiderWeb} 
-          isWalkingEnabled={isWalkingEnabled}
-          onWalkingToggle={() => setIsWalkingEnabled(!isWalkingEnabled)}
-          onClearSelection={() => setSelectedStopId(null)}
+          itineraries={itineraries}
+          selectedIndex={selectedIndex}
+          onSelectRoute={setSelectedIndex}
+          originStopId={state.originStopId}
+          destinationStopId={state.destinationStopId}
+          onClearSelection={handleClearSelection}
+          setOriginStopId={setOriginStopId}
+          setDestinationStopId={setDestinationStopId}
+          allStops={
+            graphData?.features
+              .filter(f => f.geometry.type === 'Point')
+              .map(f => ({ id: String(f.properties.id), name: String(f.properties.name) }))
+              .sort((a, b) => a.name.localeCompare(b.name)) || []
+          }
         />
       </div>
 
@@ -55,11 +70,15 @@ export default function Home() {
         </div>
       )}
 
-      {/* Mapbox Layer */}
-      {/* Note: You must provide a valid NEXT_PUBLIC_MAPBOX_TOKEN in your .env.local */}
+      {/* MapLibre Layer */}
       <MapComponent 
-         graphData={graphData} 
-         mapboxToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN || ""} 
+         graphData={graphData}
+         originStopId={state.originStopId}
+         destinationStopId={state.destinationStopId}
+         itinerary={itineraries[selectedIndex] || null}
+         setOriginStopId={setOriginStopId}
+         setDestinationStopId={setDestinationStopId}
+         clearSelection={handleClearSelection}
       />
 
     </main>
