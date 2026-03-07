@@ -32,6 +32,14 @@ export interface TripItinerary {
   legs: RouteLeg[];
 }
 
+export function toTitleCase(str: string): string {
+  return str
+    .replace(/-/g, ' ')
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
 export async function fetchAndParseData(): Promise<TransitGeoJSON> {
   const res = await fetch('/data/bus-network-geo.json');
   if (!res.ok) {
@@ -44,7 +52,10 @@ export async function fetchAndParseData(): Promise<TransitGeoJSON> {
     rawData.features.forEach((f: any) => {
       if (!f.properties) f.properties = {};
       f.properties.id = (f.properties.id || f.properties.name || Math.random().toString()).toString();
-      f.properties.name = (f.properties.name || f.properties.id).toString();
+
+      // Title Case the name and replace hyphens
+      let name = (f.properties.name || f.properties.id).toString();
+      f.properties.name = toTitleCase(name);
 
       // Keep coordinates as strict numbers
       if (f.geometry?.type === 'Point') {
@@ -209,17 +220,19 @@ export function computeAllPaths(originId: string, destId: string, geojson: Trans
       // If destination is on this bus
       if (stops.includes(normalizedDestId)) {
         const destIdx = stops.indexOf(normalizedDestId);
-        const currentIdx = stops.indexOf(currentStopId);
-        const originalEndStopId = String(originalStops[destIdx]);
+        const nextStopId = String(originalStops[destIdx]);
+
+        const fromName = stopMap.get(originalCurrentStopId)?.properties.name || originalCurrentStopId;
+        const toName = stopMap.get(nextStopId)?.properties.name || nextStopId;
 
         const busNumber = route.properties.busNumber || route.properties.name?.split(':')[0]?.replace('Route ', '') || route.properties.id;
-        const routeName = `${busNumber}: ${originalCurrentStopId} to ${originalEndStopId}`;
+        const routeName = `${busNumber}: ${fromName} to ${toName}`;
 
         const newLeg: RouteLeg = {
           routeId: route.properties.id,
           routeName: routeName,
           fromStopId: originalCurrentStopId,
-          toStopId: originalEndStopId
+          toStopId: nextStopId
         };
 
         validItineraries.push({
@@ -233,32 +246,34 @@ export function computeAllPaths(originId: string, destId: string, geojson: Trans
       if (history.length >= maxTransfers + 1) continue; // Can't transfer again
 
       // Reachability: Explore all other stops on this bus
-      const currentIdx = stops.indexOf(currentStopId);
       for (let i = 0; i < stops.length; i++) {
-        const nextStopId = stops[i];
-        if (nextStopId === currentStopId) continue;
+        const nextStopIdInternal = stops[i];
+        if (nextStopIdInternal === currentStopId) continue;
 
         const nextDepth = history.length + 1;
-        if (visitedStops.has(nextStopId) && visitedStops.get(nextStopId)! < nextDepth) {
-          continue; // We've reached this stop more efficiently before
+        if (visitedStops.has(nextStopIdInternal) && visitedStops.get(nextStopIdInternal)! < nextDepth) {
+          continue;
         }
 
-        visitedStops.set(nextStopId, nextDepth);
-        const originalNextStopId = String(originalStops[i]);
+        visitedStops.set(nextStopIdInternal, nextDepth);
+        const nextStopIdOriginal = String(originalStops[i]);
+
+        const fromName = stopMap.get(originalCurrentStopId)?.properties.name || originalCurrentStopId;
+        const toName = stopMap.get(nextStopIdOriginal)?.properties.name || nextStopIdOriginal;
 
         const busNumber = route.properties.busNumber || route.properties.name?.split(':')[0]?.replace('Route ', '') || route.properties.id;
-        const routeName = `${busNumber}: ${originalCurrentStopId} to ${originalNextStopId}`;
+        const routeName = `${busNumber}: ${fromName} to ${toName}`;
 
         const newLeg: RouteLeg = {
           routeId: route.properties.id,
           routeName: routeName,
           fromStopId: originalCurrentStopId,
-          toStopId: originalNextStopId
+          toStopId: nextStopIdOriginal
         };
 
         queue.push({
-          currentStopId: nextStopId,
-          originalCurrentStopId: originalNextStopId,
+          currentStopId: nextStopIdInternal,
+          originalCurrentStopId: nextStopIdOriginal,
           history: [...history, newLeg],
           visitedBuses: new Set([...visitedBuses, route.properties.id])
         });

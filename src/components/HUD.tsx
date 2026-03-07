@@ -130,18 +130,20 @@ export function HUD({
   };
 
   const renderRouteTimeline = (itinerary: TripItinerary) => {
+      const getStopName = (id: string) => allStops.find(s => s.id === id)?.name || id;
+
       return (
-          <div className="bg-zinc-900/60 rounded-lg border border-zinc-800 p-3 space-y-3 mt-2 animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-zinc-950/40 rounded-lg border border-zinc-800/50 p-3 space-y-3 mt-2 animate-in fade-in zoom-in-95 duration-200">
             <h4 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest flex items-center gap-1.5 focus:outline-none">
                 <Navigation className="w-3.5 h-3.5" /> Directions
             </h4>
-            <ul className="space-y-4 relative before:absolute before:inset-0 before:ml-1 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-px before:bg-zinc-700">
+            <ul className="space-y-4 relative before:absolute before:inset-0 before:ml-1 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-px before:bg-zinc-800/50">
                 {itinerary.legs.map((leg, i) => {
                   const color = ROUTE_COLORS[i % ROUTE_COLORS.length];
                   return (
                     <li key={`leg-${i}`} className="relative pl-6 text-sm mb-2">
                         <span 
-                          className="absolute flex items-center justify-center w-2.5 h-2.5 rounded-full -left-px top-1.5 ring-4 ring-zinc-900/50"
+                          className="absolute flex items-center justify-center w-2.5 h-2.5 rounded-full -left-px top-1.5 ring-4 ring-zinc-950/50"
                           style={{ backgroundColor: color }}
                         ></span>
                         <div className="font-medium text-zinc-200 flex items-center gap-2 mb-1.5 flex-wrap">
@@ -154,14 +156,14 @@ export function HUD({
                               {leg.routeName}
                           </Badge>
                         </div>
-                        <div className="text-xs text-zinc-400 mt-0.5">Board: {leg.fromStopId}</div>
-                        <div className="text-xs text-zinc-400">Alight: {leg.toStopId}</div>
+                        <div className="text-xs text-zinc-400 mt-0.5">Board: {getStopName(leg.fromStopId)}</div>
+                        <div className="text-xs text-zinc-400">Alight: {getStopName(leg.toStopId)}</div>
                     </li>
                   );
                 })}
                 <li className="relative pl-6 text-sm pt-1">
-                  <span className="absolute flex items-center justify-center w-2.5 h-2.5 bg-red-500 rounded-full -left-px top-2 ring-4 ring-zinc-900/50"></span>
-                  <div className="font-medium text-zinc-300">Arrive</div>
+                  <span className="absolute flex items-center justify-center w-2.5 h-2.5 bg-red-500 rounded-full -left-px top-2 ring-4 ring-zinc-950/50"></span>
+                  <div className="font-medium text-zinc-300">Arrive at {itinerary.destination.properties.name}</div>
                 </li>
             </ul>
           </div>
