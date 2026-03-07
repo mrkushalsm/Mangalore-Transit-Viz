@@ -8,6 +8,9 @@ export const metadata: Metadata = {
   title: "Mangalore Transit Viz",
   description: "High-performance transit engine analyzing direct and transfer routes across Mangalore.",
   manifest: "/manifest.json",
+};
+
+export const viewport = {
   themeColor: "#09090b",
 };
 
