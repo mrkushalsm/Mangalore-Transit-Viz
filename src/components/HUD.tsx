@@ -224,10 +224,10 @@ export function HUD({
   };
 
   return (
-    <div className="absolute inset-0 md:static pointer-events-none flex flex-col justify-between md:justify-start md:w-96 h-full md:h-auto md:max-h-[90vh] z-30 overflow-hidden">
+    <div className="absolute inset-0 pointer-events-none flex flex-col justify-between md:justify-start md:top-4 md:left-4 md:right-auto md:bottom-auto md:w-96 h-full md:h-auto md:max-h-[85vh] z-30 md:overflow-visible overflow-hidden">
       
       {/* Top Search Panel */}
-      <div className="pointer-events-auto w-auto mx-4 mt-6 mb-2 md:m-0 bg-zinc-950/90 md:bg-zinc-950/80 backdrop-blur-md border md:border-b border-zinc-800 shadow-xl rounded-2xl md:rounded-t-xl md:rounded-b-none transition-all duration-300">
+      <div className="pointer-events-auto w-auto mx-4 mt-6 mb-2 md:mx-0 md:mt-0 md:mb-0 bg-zinc-950/90 md:bg-zinc-950/80 backdrop-blur-md border border-zinc-800 shadow-xl rounded-2xl md:rounded-t-2xl md:rounded-b-none transition-all duration-300">
       <CardHeader className="pb-4 pt-5 relative border-b border-zinc-800/50">
          <div className="flex items-center justify-between">
            <CardTitle className="text-xl font-bold flex items-center gap-2 text-zinc-100">
@@ -271,7 +271,7 @@ export function HUD({
       <div 
         ref={sheetRef}
         className={cn(
-          "pointer-events-auto w-full bg-zinc-950/95 md:bg-zinc-950/80 backdrop-blur-md border-t md:border-t-0 md:border border-zinc-800 shadow-[0_-8px_30px_-15px_rgba(0,0,0,0.5)] md:shadow-xl rounded-t-3xl md:rounded-b-xl md:rounded-t-none flex flex-col overflow-hidden relative will-change-transform",
+          "pointer-events-auto w-full bg-zinc-950/95 md:bg-zinc-950/80 backdrop-blur-md border-t md:border-t-0 md:border border-zinc-800 shadow-[0_-8px_30px_-15px_rgba(0,0,0,0.5)] md:shadow-xl rounded-t-3xl md:rounded-t-none md:rounded-b-2xl flex flex-col overflow-hidden relative will-change-transform",
           !isDraggingState && "transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]",
           (itineraries.length > 0) 
             ? "max-h-[60vh] md:max-h-none opacity-100 md:flex-1" 
