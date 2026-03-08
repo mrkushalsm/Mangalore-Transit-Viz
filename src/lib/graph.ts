@@ -159,12 +159,12 @@ export function computeAllPaths(originId: string, destId: string, geojson: Trans
   const allStops = geojson.features.filter(f => f.geometry.type === 'Point') as BusStopFeature[];
   const allRoutes = geojson.features.filter(f => f.geometry.type === 'LineString') as RouteFeature[];
 
-  const stopMap = new Map(allStops.map(s => [s.properties.id, s]));
+  const stopMap = new Map(allStops.map(s => [String(s.properties.id).toLowerCase().trim(), s]));
   const routeMap = new Map(allRoutes.map(r => [r.properties.id, r]));
 
-  const origin = stopMap.get(originId);
-  const dest = stopMap.get(destId);
-  if (!origin || !dest || originId === destId) return [];
+  const origin = stopMap.get(String(originId).toLowerCase().trim());
+  const dest = stopMap.get(String(destId).toLowerCase().trim());
+  if (!origin || !dest || String(originId).toLowerCase().trim() === String(destId).toLowerCase().trim()) return [];
 
   // Build a fast lookup of StopName -> RouteFeatures
   const stopToRoutes = new Map<string, RouteFeature[]>();
@@ -222,8 +222,8 @@ export function computeAllPaths(originId: string, destId: string, geojson: Trans
         const destIdx = stops.indexOf(normalizedDestId);
         const nextStopId = String(originalStops[destIdx]);
 
-        const fromName = stopMap.get(originalCurrentStopId)?.properties.name || originalCurrentStopId;
-        const toName = stopMap.get(nextStopId)?.properties.name || nextStopId;
+        const fromName = stopMap.get(String(originalCurrentStopId).toLowerCase().trim())?.properties.name || originalCurrentStopId;
+        const toName = stopMap.get(String(nextStopId).toLowerCase().trim())?.properties.name || nextStopId;
 
         const busNumber = route.properties.busNumber || route.properties.name?.split(':')[0]?.replace('Route ', '') || route.properties.id;
         const routeName = `${busNumber}: ${fromName} to ${toName}`;
@@ -258,8 +258,8 @@ export function computeAllPaths(originId: string, destId: string, geojson: Trans
         visitedStops.set(nextStopIdInternal, nextDepth);
         const nextStopIdOriginal = String(originalStops[i]);
 
-        const fromName = stopMap.get(originalCurrentStopId)?.properties.name || originalCurrentStopId;
-        const toName = stopMap.get(nextStopIdOriginal)?.properties.name || nextStopIdOriginal;
+        const fromName = stopMap.get(String(originalCurrentStopId).toLowerCase().trim())?.properties.name || originalCurrentStopId;
+        const toName = stopMap.get(String(nextStopIdOriginal).toLowerCase().trim())?.properties.name || nextStopIdOriginal;
 
         const busNumber = route.properties.busNumber || route.properties.name?.split(':')[0]?.replace('Route ', '') || route.properties.id;
         const routeName = `${busNumber}: ${fromName} to ${toName}`;
