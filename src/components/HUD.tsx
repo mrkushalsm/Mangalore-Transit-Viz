@@ -6,7 +6,7 @@ import { ROUTE_COLORS } from "./MapComponent";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 
 interface Stop {
@@ -24,6 +24,8 @@ interface HUDProps {
   setOriginStopId: (id: string | null) => void;
   setDestinationStopId: (id: string | null) => void;
   allStops: Stop[];
+  isSheetOpen: boolean;
+  setIsSheetOpen: (open: boolean) => void;
 }
 
 export function HUD({ 
@@ -35,10 +37,61 @@ export function HUD({
   onClearSelection,
   setOriginStopId,
   setDestinationStopId,
-  allStops
+  allStops,
+  isSheetOpen,
+  setIsSheetOpen
 }: HUDProps) {
   const [openOrigin, setOpenOrigin] = useState(false);
   const [openDest, setOpenDest] = useState(false);
+
+  // Touch drag state for bottom sheet
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const dragStartY = useRef(0);
+  const isDragging = useRef(false);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDraggingState, setIsDraggingState] = useState(false);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    isDragging.current = true;
+    dragStartY.current = e.touches[0].clientY;
+    setIsDraggingState(true);
+    setDragOffset(0);
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!isDragging.current) return;
+    const delta = e.touches[0].clientY - dragStartY.current;
+
+    if (isSheetOpen) {
+      // Sheet is open: allow full downward drag, damped upward drag
+      if (delta >= 0) {
+        setDragOffset(delta);
+      } else {
+        // Rubber-band resistance when dragging up past open position
+        setDragOffset(delta * 0.3);
+      }
+    } else {
+      // Sheet is closed: allow full upward drag, damped downward drag
+      if (delta <= 0) {
+        setDragOffset(delta);
+      } else {
+        setDragOffset(delta * 0.3);
+      }
+    }
+  }, [isSheetOpen]);
+
+  const handleTouchEnd = useCallback(() => {
+    if (!isDragging.current) return;
+    isDragging.current = false;
+    setIsDraggingState(false);
+
+    if (isSheetOpen && dragOffset > 60) {
+      setIsSheetOpen(false);
+    } else if (!isSheetOpen && dragOffset < -60) {
+      setIsSheetOpen(true);
+    }
+    setDragOffset(0);
+  }, [isSheetOpen, setIsSheetOpen, dragOffset]);
   
   // Group itineraries by transfer count
   const groups = itineraries.reduce((acc, it, idx) => {
@@ -171,8 +224,11 @@ export function HUD({
   };
 
   return (
-    <Card className="w-80 md:w-96 backdrop-blur-md bg-zinc-950/80 border-zinc-800 shadow-xl overflow-hidden transition-all duration-300 pointer-events-auto flex flex-col max-h-[90vh]">
-      <CardHeader className="pb-4 relative border-b border-zinc-800/50">
+    <div className="absolute inset-0 md:static pointer-events-none flex flex-col justify-between md:justify-start md:w-96 h-full md:h-auto md:max-h-[90vh] z-30 overflow-hidden">
+      
+      {/* Top Search Panel */}
+      <div className="pointer-events-auto w-auto mx-4 mt-6 mb-2 md:m-0 bg-zinc-950/90 md:bg-zinc-950/80 backdrop-blur-md border md:border-b border-zinc-800 shadow-xl rounded-2xl md:rounded-t-xl md:rounded-b-none transition-all duration-300">
+      <CardHeader className="pb-4 pt-5 relative border-b border-zinc-800/50">
          <div className="flex items-center justify-between">
            <CardTitle className="text-xl font-bold flex items-center gap-2 text-zinc-100">
              <Route className="text-cyan-400 w-5 h-5" />
@@ -209,6 +265,37 @@ export function HUD({
             />
          </div>
       </CardHeader>
+      </div>
+
+      {/* Bottom Route Details Sheet */}
+      <div 
+        ref={sheetRef}
+        className={cn(
+          "pointer-events-auto w-full bg-zinc-950/95 md:bg-zinc-950/80 backdrop-blur-md border-t md:border-t-0 md:border border-zinc-800 shadow-[0_-8px_30px_-15px_rgba(0,0,0,0.5)] md:shadow-xl rounded-t-3xl md:rounded-b-xl md:rounded-t-none flex flex-col overflow-hidden relative will-change-transform",
+          !isDraggingState && "transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]",
+          (itineraries.length > 0) 
+            ? "max-h-[60vh] md:max-h-none opacity-100 md:flex-1" 
+            : "max-h-0 md:max-h-none opacity-0 md:opacity-100 md:flex-1 md:border-none"
+        )}
+        style={{
+          transform: itineraries.length > 0 
+            ? (isSheetOpen 
+                ? `translateY(${dragOffset}px)` 
+                : `translateY(calc(100% - 3rem + ${dragOffset}px))`
+              )
+            : 'translateY(100%)',
+        }}
+      >
+        {/* Mobile Pull Handle */}
+        <div 
+           className="w-full flex justify-center pt-3 pb-3 md:hidden cursor-grab active:cursor-grabbing touch-none select-none"
+           onTouchStart={handleTouchStart}
+           onTouchMove={handleTouchMove}
+           onTouchEnd={handleTouchEnd}
+           onClick={() => { if (!isDraggingState) setIsSheetOpen(!isSheetOpen); }}
+        >
+           <div className="w-12 h-1.5 bg-zinc-700 rounded-full" />
+        </div>
       
       {transferLevels.length > 0 && (
         <div className="bg-zinc-900/30 px-4 py-2 flex items-center gap-1 border-b border-zinc-800/50">
@@ -293,7 +380,9 @@ export function HUD({
               </div>
            </div>
         )}
-      </CardContent>
-    </Card>
+          <div className="pb-6 md:pb-0" /> {/* Extra padding for mobile bottom */}
+        </CardContent>
+      </div>
+    </div>
   );
 }

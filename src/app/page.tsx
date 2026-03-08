@@ -97,6 +97,7 @@ export default function Home() {
   const [graphData, setGraphData] = useState<TransitGeoJSON | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [isSheetOpen, setIsSheetOpen] = useState(true);
   
   const { state, isLoaded: isStateLoaded, setOriginStopId, setDestinationStopId, clearSelection } = useTransitState();
 
@@ -144,7 +145,7 @@ export default function Home() {
       </Suspense>
 
       {/* HUD Layer */}
-      <div className="absolute bottom-0 left-0 right-0 md:bottom-auto md:right-auto md:top-4 md:left-4 z-20 pointer-events-auto">
+      <div className="absolute inset-0 z-20 pointer-events-none">
         <HUD 
           itineraries={itineraries}
           selectedIndex={selectedIndex}
@@ -160,6 +161,8 @@ export default function Home() {
               .map(f => ({ id: String(f.properties.id), name: String(f.properties.name) }))
               .sort((a, b) => a.name.localeCompare(b.name)) || []
           }
+          isSheetOpen={isSheetOpen}
+          setIsSheetOpen={setIsSheetOpen}
         />
       </div>
 
@@ -180,6 +183,7 @@ export default function Home() {
          setOriginStopId={setOriginStopId}
          setDestinationStopId={setDestinationStopId}
          clearSelection={handleClearSelection}
+         onMapClick={() => setIsSheetOpen(false)}
       />
 
     </main>

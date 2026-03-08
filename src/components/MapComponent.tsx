@@ -23,11 +23,12 @@ interface MapComponentProps {
   setOriginStopId: (id: string | null) => void;
   setDestinationStopId: (id: string | null) => void;
   clearSelection: () => void;
+  onMapClick?: () => void;
 }
 
 export default function MapComponent({ 
   graphData, originStopId, destinationStopId, itinerary, 
-  setOriginStopId, setDestinationStopId, clearSelection 
+  setOriginStopId, setDestinationStopId, clearSelection, onMapClick
 }: MapComponentProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -132,22 +133,23 @@ export default function MapComponent({
         },
       });
 
-      // map.current.on("click", (e) => {
-      //   if (!graphDataRef.current) return;
-      //   const nearest = findNearestStop(e.lngLat.lng, e.lngLat.lat, graphDataRef.current);
-      //   
-      //   if (nearest) {
-      //     const { originStopId: currentOrigin, destinationStopId: currentDest } = stateRef.current;
-      //     if (!currentOrigin) {
-      //        setOriginStopId(nearest.properties.id);
-      //     } else if (!currentDest) {
-      //        setDestinationStopId(nearest.properties.id);
-      //     } else {
-      //        clearSelection();
-      //        setOriginStopId(nearest.properties.id);
-      //     }
-      //   }
-      // });
+      map.current.on("click", (e) => {
+        if (onMapClick) onMapClick();
+        // if (!graphDataRef.current) return;
+        // const nearest = findNearestStop(e.lngLat.lng, e.lngLat.lat, graphDataRef.current);
+        // 
+        // if (nearest) {
+        //   const { originStopId: currentOrigin, destinationStopId: currentDest } = stateRef.current;
+        //   if (!currentOrigin) {
+        //      setOriginStopId(nearest.properties.id);
+        //   } else if (!currentDest) {
+        //      setDestinationStopId(nearest.properties.id);
+        //   } else {
+        //      clearSelection();
+        //      setOriginStopId(nearest.properties.id);
+        //   }
+        // }
+      });
       
       setMapLoaded(true);
     });
