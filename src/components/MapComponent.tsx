@@ -164,7 +164,7 @@ export default function MapComponent({
   }, [graphData]);
 
   useEffect(() => {
-    if (!map.current || !graphData || !mapLoaded || !map.current.isStyleLoaded()) return;
+    if (!map.current || !graphData || !mapLoaded) return;
 
     const pointFeatures = graphData.features.filter(f => f.geometry.type === 'Point');
     const lineFeatures = graphData.features.filter(f => f.geometry.type === 'LineString');
@@ -218,8 +218,9 @@ export default function MapComponent({
                      if (bestIdx > searchStart) searchStart = bestIdx;
                  }
 
-                 const fi = routeStops.indexOf(leg.fromStopId);
-                 const ti = routeStops.lastIndexOf(leg.toStopId);
+                 const routeStopsLower = routeStops.map((s: any) => String(s).toLowerCase().trim());
+                 const fi = routeStopsLower.indexOf(String(leg.fromStopId).toLowerCase().trim());
+                 const ti = routeStopsLower.lastIndexOf(String(leg.toStopId).toLowerCase().trim());
                  
                  if (fi !== -1 && ti !== -1) {
                      const idx1 = stopCoordIndices[fi];
@@ -266,11 +267,11 @@ export default function MapComponent({
 
     const selectedPointsFeatures: any[] = [];
     if (originStopId) {
-       const originF = pointFeatures.find(f => f.properties?.id === originStopId);
+       const originF = pointFeatures.find(f => String(f.properties?.id).toLowerCase().trim() === String(originStopId).toLowerCase().trim());
        if (originF) selectedPointsFeatures.push({ ...originF, properties: { ...originF.properties, type: "origin" } });
     }
     if (destinationStopId) {
-       const destF = pointFeatures.find(f => f.properties?.id === destinationStopId);
+       const destF = pointFeatures.find(f => String(f.properties?.id).toLowerCase().trim() === String(destinationStopId).toLowerCase().trim());
        if (destF) selectedPointsFeatures.push({ ...destF, properties: { ...destF.properties, type: "destination" } });
     }
 

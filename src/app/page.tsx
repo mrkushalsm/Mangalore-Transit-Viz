@@ -15,6 +15,7 @@ function SearchParamsWrapper({
   selectedIndex, 
   setSelectedIndex, 
   state, 
+  isStateLoaded,
   setOriginStopId, 
   setDestinationStopId, 
   clearSelection 
@@ -22,9 +23,11 @@ function SearchParamsWrapper({
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
+  const [isInitialized, setIsInitialized] = useState(false);
 
   // Sync from URL to State on mount or URL change
   useEffect(() => {
+    if (!isStateLoaded) return;
     const from = searchParams.get("from");
     const to = searchParams.get("to");
     const idx = searchParams.get("idx");
@@ -37,10 +40,18 @@ function SearchParamsWrapper({
         setSelectedIndex(parsedIdx);
       }
     }
-  }, [searchParams]);
+    
+    setIsInitialized(true);
+  }, [searchParams, isStateLoaded]);
 
   // Sync from State to URL
   useEffect(() => {
+    if (!isInitialized) return;
+
+    const fromURL = searchParams.get("from");
+    const toURL = searchParams.get("to");
+    const idxURL = searchParams.get("idx");
+
     const params = new URLSearchParams(searchParams.toString());
     
     let changed = false;
@@ -87,7 +98,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [selectedIndex, setSelectedIndex] = useState(0);
   
-  const { state, setOriginStopId, setDestinationStopId, clearSelection } = useTransitState();
+  const { state, isLoaded: isStateLoaded, setOriginStopId, setDestinationStopId, clearSelection } = useTransitState();
 
   // Initialize data
   useEffect(() => {
@@ -123,6 +134,7 @@ export default function Home() {
       <Suspense fallback={null}>
         <SearchParamsWrapper 
           state={state}
+          isStateLoaded={isStateLoaded}
           selectedIndex={selectedIndex}
           setSelectedIndex={setSelectedIndex}
           setOriginStopId={setOriginStopId}
@@ -132,7 +144,7 @@ export default function Home() {
       </Suspense>
 
       {/* HUD Layer */}
-      <div className="absolute top-4 left-4 z-20 pointer-events-auto">
+      <div className="absolute bottom-0 left-0 right-0 md:bottom-auto md:right-auto md:top-4 md:left-4 z-20 pointer-events-auto">
         <HUD 
           itineraries={itineraries}
           selectedIndex={selectedIndex}
