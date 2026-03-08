@@ -281,9 +281,10 @@ export function HUD({
           transform: itineraries.length > 0 
             ? (isSheetOpen 
                 ? `translateY(${dragOffset}px)` 
-                : `translateY(calc(100% - 3rem + ${dragOffset}px))`
+                : `translateY(calc(100% - 4rem - env(safe-area-inset-bottom, 0px) + ${dragOffset}px))`
               )
             : 'translateY(100%)',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}
       >
         {/* Mobile Pull Handle */}
