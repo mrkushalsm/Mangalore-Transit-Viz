@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, Suspense } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { TransitGeoJSON, fetchAndParseData, computeAllPaths, TripItinerary } from "@/lib/graph";
+import { prefetchMangaloreTiles, prefetchMapStyle } from "@/lib/prefetchTiles";
 import { HUD } from "@/components/HUD";
 import { useTransitState } from "@/hooks/useTransitState";
 
@@ -115,6 +116,22 @@ export default function Home() {
     }
     initData();
   }, []);
+
+  // Prefetch map tiles for offline use after data loads
+  useEffect(() => {
+    if (!loading && graphData) {
+      // Give the map a moment to initialize, then start background prefetch
+      const timer = setTimeout(() => {
+        prefetchMapStyle();
+        prefetchMangaloreTiles((done, total) => {
+          if (done % 50 === 0 || done === total) {
+            console.log(`[Tiles] Progress: ${done}/${total}`);
+          }
+        });
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, graphData]);
 
   const itineraries: TripItinerary[] = (graphData && state.originStopId && state.destinationStopId) 
     ? computeAllPaths(state.originStopId, state.destinationStopId, graphData) 

@@ -6,7 +6,7 @@ import { ROUTE_COLORS } from "./MapComponent";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 
 interface Stop {
@@ -43,6 +43,41 @@ export function HUD({
 }: HUDProps) {
   const [openOrigin, setOpenOrigin] = useState(false);
   const [openDest, setOpenDest] = useState(false);
+
+  // Dynamic viewport height to account for gesture navigation slab
+  const [viewportHeight, setViewportHeight] = useState<number>(0);
+  const [safeAreaBottom, setSafeAreaBottom] = useState<number>(0);
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    // Read CSS env(safe-area-inset-bottom) by measuring a zero-height element
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;bottom:0;left:0;width:0;height:env(safe-area-inset-bottom,0px);pointer-events:none;visibility:hidden';
+    document.body.appendChild(probe);
+    const readSafeArea = () => {
+      const h = probe.getBoundingClientRect().height;
+      setSafeAreaBottom(h);
+    };
+    readSafeArea();
+
+    const updateHeight = () => {
+      // visualViewport gives the actual visible area (excludes browser chrome, nav bars)
+      const h = window.visualViewport?.height ?? window.innerHeight;
+      setViewportHeight(h);
+      readSafeArea();
+      // Track desktop breakpoint (Tailwind md = 768px)
+      setIsDesktop(window.innerWidth >= 768);
+    };
+    updateHeight();
+
+    window.visualViewport?.addEventListener('resize', updateHeight);
+    window.addEventListener('resize', updateHeight);
+    return () => {
+      window.visualViewport?.removeEventListener('resize', updateHeight);
+      window.removeEventListener('resize', updateHeight);
+      document.body.removeChild(probe);
+    };
+  }, []);
 
   // Touch drag state for bottom sheet
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -223,6 +258,16 @@ export function HUD({
       );
   };
 
+  // Peek height = pull handle (48px) + tab bar (~44px) + safe area bottom
+  const PEEK_HANDLE_PX = 48;
+  const PEEK_TABS_PX = 44;
+  const peekHeight = PEEK_HANDLE_PX + PEEK_TABS_PX + safeAreaBottom;
+
+  // For mobile: when collapsed, translate down so only peek height is visible
+  const mobileCollapsedTranslate = viewportHeight > 0
+    ? `calc(100% - ${peekHeight}px + ${dragOffset}px)`
+    : `calc(100% - 4rem - env(safe-area-inset-bottom, 0px) + ${dragOffset}px)`;
+
   return (
     <div className="absolute inset-0 pointer-events-none flex flex-col justify-between md:justify-start md:top-4 md:left-4 md:right-auto md:bottom-auto md:w-96 h-full md:h-auto md:max-h-[85vh] z-30 md:overflow-visible overflow-hidden">
       
@@ -271,20 +316,29 @@ export function HUD({
       <div 
         ref={sheetRef}
         className={cn(
-          "pointer-events-auto w-full bg-zinc-950/95 md:bg-zinc-950/80 backdrop-blur-md border-t md:border-t-0 md:border border-zinc-800 shadow-[0_-8px_30px_-15px_rgba(0,0,0,0.5)] md:shadow-xl rounded-t-3xl md:rounded-t-none md:rounded-b-2xl flex flex-col overflow-hidden relative will-change-transform",
+          // On desktop (md+): normal static flow inside the card column — no translate tricks
+          // On mobile: fixed-style sheet that slides up/down from bottom
+          "pointer-events-auto w-full bg-zinc-950/95 md:bg-zinc-950/80 backdrop-blur-md",
+          "border-t md:border-t-0 md:border border-zinc-800",
+          "shadow-[0_-8px_30px_-15px_rgba(0,0,0,0.5)] md:shadow-xl",
+          "rounded-t-3xl md:rounded-t-none md:rounded-b-2xl",
+          "flex flex-col overflow-hidden relative will-change-transform md:transform-none",
           !isDraggingState && "transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]",
-          (itineraries.length > 0) 
-            ? "max-h-[60vh] md:max-h-none opacity-100 md:flex-1" 
-            : "max-h-0 md:max-h-none opacity-0 md:opacity-100 md:flex-1 md:border-none"
+          itineraries.length > 0
+            ? "opacity-100 md:flex-1 md:max-h-[60vh] md:overflow-y-auto"
+            : "opacity-0 md:opacity-100 md:flex-1 md:border-none"
         )}
         style={{
-          transform: itineraries.length > 0 
-            ? (isSheetOpen 
-                ? `translateY(${dragOffset}px)` 
-                : `translateY(calc(100% - 4rem - env(safe-area-inset-bottom, 0px) + ${dragOffset}px))`
-              )
-            : 'translateY(100%)',
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          // Desktop: never apply translateY — inline styles override CSS classes so we
+          // must guard this in JS, not just rely on md:transform-none
+          transform: isDesktop ? 'none' : (() => {
+            if (itineraries.length === 0) return 'translateY(100%)';
+            return isSheetOpen
+              ? `translateY(${dragOffset}px)`
+              : `translateY(${mobileCollapsedTranslate})`;
+          })(),
+          // Pad content above the gesture bar (mobile only)
+          paddingBottom: isDesktop ? undefined : `${safeAreaBottom}px`,
         }}
       >
         {/* Mobile Pull Handle */}

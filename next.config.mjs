@@ -22,6 +22,9 @@ const withPWA = withPWAInit({
           maxEntries: 500,
           maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
         },
+        cacheableResponse: {
+          statuses: [0, 200], // 0 = opaque (no-cors) responses
+        },
       },
     },
     {

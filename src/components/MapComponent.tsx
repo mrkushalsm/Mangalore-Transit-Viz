@@ -32,6 +32,7 @@ export default function MapComponent({
 }: MapComponentProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
+  const popupRef = useRef<maplibregl.Popup | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
 
   const stateRef = useRef({ originStopId, destinationStopId });
@@ -133,22 +134,57 @@ export default function MapComponent({
         },
       });
 
+      // ── Stop click → popup ──────────────────────────────────────────
+      map.current.on("click", "all-stops-points", (e) => {
+        e.preventDefault(); // stop the event bubbling to the general map click
+        const feature = e.features?.[0];
+        if (!feature || feature.geometry.type !== "Point") return;
+
+        const [lng, lat] = feature.geometry.coordinates as [number, number];
+        const name = feature.properties?.name || feature.properties?.id || "Bus Stop";
+
+        // Close any existing popup
+        popupRef.current?.remove();
+
+        popupRef.current = new maplibregl.Popup({
+          closeButton: false,
+          closeOnClick: false,
+          offset: 14,
+          className: "transit-stop-popup",
+          maxWidth: "220px",
+        })
+          .setLngLat([lng, lat])
+          .setHTML(
+            `<div class="transit-popup-inner">
+               <span class="transit-popup-icon">🚌</span>
+               <span class="transit-popup-name">${name}</span>
+             </div>`
+          )
+          .addTo(map.current!);
+      });
+
+      // ── Cursor changes on stop hover ────────────────────────────────
+      map.current.on("mouseenter", "all-stops-points", () => {
+        if (map.current) map.current.getCanvas().style.cursor = "pointer";
+      });
+      map.current.on("mouseleave", "all-stops-points", () => {
+        if (map.current) map.current.getCanvas().style.cursor = "";
+      });
+
+      // ── General map click (background) ─────────────────────────────
       map.current.on("click", (e) => {
-        if (onMapClick) onMapClick();
-        // if (!graphDataRef.current) return;
-        // const nearest = findNearestStop(e.lngLat.lng, e.lngLat.lat, graphDataRef.current);
-        // 
-        // if (nearest) {
-        //   const { originStopId: currentOrigin, destinationStopId: currentDest } = stateRef.current;
-        //   if (!currentOrigin) {
-        //      setOriginStopId(nearest.properties.id);
-        //   } else if (!currentDest) {
-        //      setDestinationStopId(nearest.properties.id);
-        //   } else {
-        //      clearSelection();
-        //      setOriginStopId(nearest.properties.id);
-        //   }
-        // }
+        // Only fire if no stop was clicked (MapLibre fires layer click first when
+        // defaultPrevented would be set, but since we can't preventDefault on
+        // MapLibre map events from a layer handler, we check queried features)
+        const features = map.current!.queryRenderedFeatures(e.point, {
+          layers: ["all-stops-points"],
+        });
+        if (features.length === 0) {
+          // Clicked empty map — close popup and notify parent
+          popupRef.current?.remove();
+          popupRef.current = null;
+          if (onMapClick) onMapClick();
+        }
       });
       
       setMapLoaded(true);
