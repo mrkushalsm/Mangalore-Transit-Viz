@@ -134,14 +134,52 @@ export default function MapComponent({
         },
       });
 
-      // ── Stop click → popup ──────────────────────────────────────────
-      map.current.on("click", "all-stops-points", (e) => {
-        e.preventDefault(); // stop the event bubbling to the general map click
-        const feature = e.features?.[0];
-        if (!feature || feature.geometry.type !== "Point") return;
+      // ── Unified map click: bounding-box stop interception ───────────
+      // HIT_RADIUS controls the invisible tap target around each finger press.
+      // 20px on desktop feels precise; on touch we bump it to 28px.
+      const HIT_RADIUS = 20;
 
-        const [lng, lat] = feature.geometry.coordinates as [number, number];
-        const name = feature.properties?.name || feature.properties?.id || "Bus Stop";
+      map.current.on("click", (e) => {
+        const { x, y } = e.point;
+
+        // Build a bounding box around the tap/click point
+        const bbox: [maplibregl.PointLike, maplibregl.PointLike] = [
+          [x - HIT_RADIUS, y - HIT_RADIUS],
+          [x + HIT_RADIUS, y + HIT_RADIUS],
+        ];
+
+        // Query all stop features within that box
+        const nearby = map.current!.queryRenderedFeatures(bbox, {
+          layers: ["all-stops-points"],
+        });
+
+        if (nearby.length === 0) {
+          // Tapped empty map — close popup and notify parent
+          popupRef.current?.remove();
+          popupRef.current = null;
+          if (onMapClick) onMapClick();
+          return;
+        }
+
+        // Pick the stop whose projected pixel position is closest to the tap
+        let best = nearby[0];
+        let bestDist = Infinity;
+        for (const feature of nearby) {
+          if (feature.geometry.type !== "Point") continue;
+          const [lng, lat] = feature.geometry.coordinates as [number, number];
+          const projected = map.current!.project([lng, lat]);
+          const dx = projected.x - x;
+          const dy = projected.y - y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = feature;
+          }
+        }
+
+        if (best.geometry.type !== "Point") return;
+        const [lng, lat] = best.geometry.coordinates as [number, number];
+        const name = best.properties?.name || best.properties?.id || "Bus Stop";
 
         // Close any existing popup
         popupRef.current?.remove();
@@ -151,7 +189,7 @@ export default function MapComponent({
           closeOnClick: false,
           offset: 14,
           className: "transit-stop-popup",
-          maxWidth: "220px",
+          maxWidth: "260px",
         })
           .setLngLat([lng, lat])
           .setHTML(
@@ -163,28 +201,12 @@ export default function MapComponent({
           .addTo(map.current!);
       });
 
-      // ── Cursor changes on stop hover ────────────────────────────────
+      // ── Cursor feedback on desktop hover ────────────────────────────
       map.current.on("mouseenter", "all-stops-points", () => {
         if (map.current) map.current.getCanvas().style.cursor = "pointer";
       });
       map.current.on("mouseleave", "all-stops-points", () => {
         if (map.current) map.current.getCanvas().style.cursor = "";
-      });
-
-      // ── General map click (background) ─────────────────────────────
-      map.current.on("click", (e) => {
-        // Only fire if no stop was clicked (MapLibre fires layer click first when
-        // defaultPrevented would be set, but since we can't preventDefault on
-        // MapLibre map events from a layer handler, we check queried features)
-        const features = map.current!.queryRenderedFeatures(e.point, {
-          layers: ["all-stops-points"],
-        });
-        if (features.length === 0) {
-          // Clicked empty map — close popup and notify parent
-          popupRef.current?.remove();
-          popupRef.current = null;
-          if (onMapClick) onMapClick();
-        }
       });
       
       setMapLoaded(true);
